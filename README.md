@@ -1,6 +1,63 @@
-# 🔥 DripStore — Premium Sneakers & Streetwear Marketplace
+# 🚀 DripStore — Full Stack E-Commerce Platform
 
-A production-ready full-stack eCommerce platform built with React, Node.js, MongoDB, Razorpay, and Cloudinary.
+A modern, production-ready **MERN stack eCommerce application** for sneakers and streetwear, featuring secure authentication, online payments, cloud-based image storage, and an admin dashboard.
+
+---
+
+## 🌐 Live Demo
+🔗 Frontend: https://your-live-link.vercel.app  
+🔗 Backend API: https://your-api-link.onrender.com  
+
+---
+
+## 📸 Features
+
+### 👤 Authentication
+- JWT-based authentication
+- Secure password hashing using bcrypt
+- Role-based access control (Admin/User)
+
+### 🛍️ Product Management
+- Product listing with search, filters, pagination
+- Product reviews and ratings
+- Dynamic product detail pages
+
+### 🛒 Cart & Checkout
+- Persistent cart (MongoDB + localStorage)
+- Multi-step checkout flow
+- Address handling & validation
+
+### 💳 Payments
+- Razorpay payment integration
+- Server-side payment verification (HMAC signature)
+
+### 📦 Orders
+- Order lifecycle: `Placed → Processing → Shipped → Delivered`
+- User order history & tracking
+
+### 🛠️ Admin Panel
+- Dashboard with stats
+- Product CRUD operations
+- Order management
+- User management
+
+### ☁️ Media Handling
+- Cloudinary integration for image uploads
+- Optimized image delivery via CDN
+
+---
+
+## 🧱 Tech Stack
+
+| Layer       | Technology |
+|------------|-----------|
+| Frontend   | React.js, React Router, Context API |
+| Backend    | Node.js, Express.js |
+| Database   | MongoDB, Mongoose |
+| Auth       | JWT, bcryptjs |
+| Payments   | Razorpay |
+| Media      | Cloudinary, Multer |
+| HTTP       | Axios |
 
 ---
 
@@ -72,17 +129,6 @@ dripstore/
 │   └── .env.example
 └── package.json               # Root — runs both client & server
 ```
-
----
-
-## ⚙️ Prerequisites
-
-- **Node.js** v18+
-- **MongoDB** (local or [Atlas](https://cloud.mongodb.com))
-- **Cloudinary** account (free tier works)
-- **Razorpay** account in test mode
-
----
 
 ## 🚀 Setup & Installation
 
@@ -218,13 +264,32 @@ db.users.updateOne({ email: "admin@example.com" }, { $set: { isAdmin: true } })
 
 ---
 
-## 📝 Notes
+🧠 Key Highlights
+Secure authentication using JWT middleware
+Payment verification using HMAC (Razorpay)
+Scalable image storage with Cloudinary
+Modular backend architecture (MVC pattern)
+Protected routes with role-based access
 
-- In Razorpay test mode, use card `4111 1111 1111 1111`, any future date, CVV `123`
-- Set `NODE_ENV=production` and build the React app for deployment
-- For production, serve the React build via Express or a CDN
+---
 
-```bash
-# Build frontend for production
-npm run build
-```
+🚀 Future Improvements
+Wishlist feature
+Coupon system
+Email notifications
+Product recommendations
+
+---
+
+👨‍💻 Author
+
+Avi Mishra - https://github.com/aviam25
+📍 Ahmedabad, India
+
+---
+
+⭐ Show Your Support
+
+If you like this project, give it a ⭐ on GitHub!
+
+---
