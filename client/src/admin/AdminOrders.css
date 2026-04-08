@@ -1,0 +1,74 @@
+.order-filter-tabs {
+  display: flex;
+  gap: 0.25rem;
+  margin-bottom: 1.5rem;
+  flex-wrap: wrap;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0;
+}
+.order-filter-tab {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 0.6rem 1rem;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: var(--transition);
+  font-family: var(--font-body);
+  margin-bottom: -1px;
+}
+.order-filter-tab:hover { color: var(--text-primary); }
+.order-filter-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+.status-select {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.35rem 0.5rem;
+  font-size: 0.8rem;
+  color: var(--text-primary);
+  cursor: pointer;
+  font-family: var(--font-body);
+  width: auto;
+}
+.status-select:focus { border-color: var(--accent); box-shadow: none; }
+.status-select:disabled { opacity: 0.5; }
+
+.order-row { cursor: pointer; }
+.order-row.expanded td { background: var(--bg-elevated); }
+
+.order-detail-row td { padding: 0; }
+.order-expand-content {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 2rem;
+  padding: 1.25rem 1.5rem;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border);
+  animation: expandIn 0.2s ease;
+}
+@keyframes expandIn {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.order-expand-content h4 {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-muted);
+  margin-bottom: 0.75rem;
+}
+.expand-item {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.4rem 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.875rem;
+}
+.expand-item:last-child { border-bottom: none; }
+.expand-item span:first-child { flex: 1; }
+.order-expand-address p { font-size: 0.875rem; color: var(--text-secondary); line-height: 1.7; }
+.order-expand-payment p { color: var(--text-secondary); }
