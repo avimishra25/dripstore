@@ -283,8 +283,8 @@ Product recommendations
 
 👨‍💻 Author
 
-Avi Mishra - https://github.com/aviam25
-📍 Ahmedabad, India
+Avi Mishra - https://github.com/avimishra25
+- 📍 Ahmedabad, India
 
 ---
 
