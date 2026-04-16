@@ -2,11 +2,13 @@
 
 A modern, production-ready **MERN stack eCommerce application** for sneakers and streetwear, featuring secure authentication, online payments, cloud-based image storage, and an admin dashboard.
 
----
-
-## 🌐 Live Demo
-🔗 Frontend: https://your-live-link.vercel.app  
-🔗 Backend API: https://your-api-link.onrender.com  
+![React](https://img.shields.io/badge/React-20232A?style=for-the-badge&logo=react&logoColor=61DAFB)
+![Node.js](https://img.shields.io/badge/Node.js-339933?style=for-the-badge&logo=nodedotjs&logoColor=white)
+![Express.js](https://img.shields.io/badge/Express.js-000000?style=for-the-badge&logo=express&logoColor=white)
+![MongoDB](https://img.shields.io/badge/MongoDB-4EA94B?style=for-the-badge&logo=mongodb&logoColor=white)
+![JWT](https://img.shields.io/badge/JWT-black?style=for-the-badge&logo=jsonwebtokens)
+![Razorpay](https://img.shields.io/badge/Razorpay-02042B?style=for-the-badge&logo=razorpay&logoColor=3395FF)
+![Cloudinary](https://img.shields.io/badge/Cloudinary-3448C5?style=for-the-badge&logo=cloudinary&logoColor=white) 
 
 ---
 
@@ -261,6 +263,17 @@ db.users.updateOne({ email: "admin@example.com" }, { $set: { isAdmin: true } })
 | Payments | Razorpay |
 | Images | Cloudinary, Multer |
 | Notifications | react-toastify |
+
+---
+
+📸 Screenshots
+
+<img width="1782" height="877" alt="image" src="https://github.com/user-attachments/assets/a96c08e8-c877-41fb-8b5b-ad5dc4bed4d5" />
+<img width="1707" height="921" alt="image" src="https://github.com/user-attachments/assets/1bfccf26-9eb8-4350-8207-657055442678" />
+<img width="1696" height="922" alt="image" src="https://github.com/user-attachments/assets/e53b7917-7f33-479e-8ddd-5d00518b54a5" />
+<img width="1675" height="926" alt="image" src="https://github.com/user-attachments/assets/8eec60fb-a188-45cb-be1f-d209631b24fe" />
+<img width="1911" height="926" alt="image" src="https://github.com/user-attachments/assets/0edff658-e8d3-4df9-a900-a95b7601b3a3" />
+<img width="1907" height="915" alt="image" src="https://github.com/user-attachments/assets/1a7668a6-5505-4ca4-8cb4-49125c974e34" />
 
 ---
 
