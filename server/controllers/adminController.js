@@ -1,213 +1,108 @@
 const asyncHandler = require('express-async-handler');
+const mongoose = require('mongoose');
 const Product = require('../models/Product');
 const Order = require('../models/Order');
 const User = require('../models/User');
 const { cloudinary } = require('../config/cloudinary');
-
-// ============ DASHBOARD ============
-
-// @desc    Get dashboard stats
-// @route   GET /api/admin/stats
-// @access  Admin
+const { fail, text, objectId, pagination } = require('../utils/validation');
+const { release } = require('../services/inventory');
+const { transitionOrder } = require('../services/orderLifecycle');
+const confirmed = { orderStatus: { $ne: 'Pending Payment' } };
+const revenueFilter = { isPaid: true, orderStatus: { $nin: ['Cancelled', 'Payment Review'] }, refundStatus: { $nin: ['required', 'processed'] } };
 const getDashboardStats = asyncHandler(async (req, res) => {
-  const [totalUsers, totalOrders, revenueData, recentOrders, lowStock] = await Promise.all([
-    User.countDocuments({ isAdmin: false }),
-    Order.countDocuments(),
-    Order.aggregate([
-      { $match: { isPaid: true } },
-      { $group: { _id: null, total: { $sum: '$totalPrice' } } },
-    ]),
-    Order.find().sort({ createdAt: -1 }).limit(5).populate('user', 'name email'),
+  const since = new Date(); since.setUTCDate(1); since.setUTCHours(0,0,0,0); since.setUTCMonth(since.getUTCMonth() - 5);
+  const [totalUsers, totalOrders, revenue, recentOrders, lowStock, lowStockCount, monthlyRevenue, refundRequired] = await Promise.all([
+    User.countDocuments({ isAdmin: false }), Order.countDocuments(confirmed),
+    Order.aggregate([{ $match: revenueFilter }, { $group: { _id: null, total: { $sum: '$totalPrice' } } }]),
+    Order.find(confirmed).sort({ createdAt: -1 }).limit(5).populate('user', 'name email'),
     Product.find({ countInStock: { $lt: 5 } }).limit(5),
+    Product.countDocuments({ countInStock: { $lt: 5 } }),
+    Order.aggregate([{ $match: { ...revenueFilter, paidAt: { $gte: since } } }, { $group: { _id: { year: { $year: '$paidAt' }, month: { $month: '$paidAt' } }, revenue: { $sum: '$totalPrice' }, orders: { $sum: 1 } } }, { $sort: { '_id.year': 1, '_id.month': 1 } }]),
+    Order.countDocuments({ refundStatus: 'required' }),
   ]);
-
-  const totalRevenue = revenueData.length > 0 ? revenueData[0].total : 0;
-
-  // Monthly revenue for chart (last 6 months)
-  const sixMonthsAgo = new Date();
-  sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
-
-  const monthlyRevenue = await Order.aggregate([
-    { $match: { isPaid: true, createdAt: { $gte: sixMonthsAgo } } },
-    {
-      $group: {
-        _id: { year: { $year: '$createdAt' }, month: { $month: '$createdAt' } },
-        revenue: { $sum: '$totalPrice' },
-        orders: { $sum: 1 },
-      },
-    },
-    { $sort: { '_id.year': 1, '_id.month': 1 } },
-  ]);
-
-  res.json({
-    success: true,
-    stats: { totalUsers, totalOrders, totalRevenue },
-    recentOrders,
-    lowStock,
-    monthlyRevenue,
-  });
+  res.json({ success: true, stats: { totalUsers, totalOrders, totalRevenue: revenue[0]?.total || 0, lowStockCount, refundRequired }, recentOrders, lowStock, monthlyRevenue });
 });
-
-// ============ PRODUCTS ============
-
-// @desc    Admin get all products
-// @route   GET /api/admin/products
-// @access  Admin
 const adminGetProducts = asyncHandler(async (req, res) => {
-  const { page = 1, limit = 20, keyword } = req.query;
-  const filter = keyword ? { $text: { $search: keyword } } : {};
-  const total = await Product.countDocuments(filter);
-  const products = await Product.find(filter)
-    .sort({ createdAt: -1 })
-    .skip((page - 1) * limit)
-    .limit(Number(limit));
-
-  res.json({ success: true, products, total, pages: Math.ceil(total / limit) });
+  const { page, limit, skip } = pagination(req.query, 20);
+  const filter = req.query.keyword ? { $text: { $search: text(req.query.keyword, 'search', 100) } } : {};
+  const [total, products] = await Promise.all([Product.countDocuments(filter), Product.find(filter).select('-reviews').sort({ createdAt: -1 }).skip(skip).limit(limit)]);
+  res.json({ success: true, products, total, page, pages: Math.ceil(total / limit) });
 });
-
-// @desc    Create product
-// @route   POST /api/admin/products
-// @access  Admin
-const createProduct = asyncHandler(async (req, res) => {
-  const { name, brand, category, description, price, originalPrice, countInStock, sizes, tags, isFeatured } = req.body;
-
-  // Handle uploaded images
-  const images = req.files ? req.files.map((f) => f.path) : [];
-
-  // Parse JSON arrays from form-data
-  const parsedSizes = typeof sizes === 'string' ? JSON.parse(sizes) : sizes || [];
-  const parsedTags = typeof tags === 'string' ? JSON.parse(tags) : tags || [];
-
-  const product = await Product.create({
-    name, brand, category, description,
-    price: Number(price),
-    originalPrice: Number(originalPrice) || 0,
-    countInStock: Number(countInStock),
-    sizes: parsedSizes,
-    tags: parsedTags,
-    images,
-    isFeatured: isFeatured === 'true',
-  });
-
-  res.status(201).json({ success: true, product });
-});
-
-// @desc    Update product
-// @route   PUT /api/admin/products/:id
-// @access  Admin
-const updateProduct = asyncHandler(async (req, res) => {
-  const product = await Product.findById(req.params.id);
-  if (!product) {
-    res.status(404);
-    throw new Error('Product not found');
+const parseArray = (value, name) => {
+  let array;
+  try { array = typeof value === 'string' ? JSON.parse(value) : value; } catch { fail(400, `Invalid ${name}`); }
+  if (!Array.isArray(array) || array.length > 50) fail(400, `Invalid ${name}`);
+  return array;
+};
+function productFields(body) {
+  const sizes = [...new Set(parseArray(body.sizes, 'sizes').map(s => text(s, 'size', 30)))];
+  if (!sizes.length) fail(400, 'At least one size is required');
+  const price = Number(body.price), originalPrice = Number(body.originalPrice || 0);
+  const countInStock = Number(body.countInStock);
+  if (!Number.isFinite(price) || price <= 0 || price > 1000000 || !Number.isFinite(originalPrice) || originalPrice < 0) fail(400, 'Invalid price');
+  if (!Number.isSafeInteger(countInStock) || countInStock < 0) fail(400, 'Invalid stock');
+  const variantStock = body.variantStock === undefined ? undefined : parseArray(body.variantStock, 'size stock');
+  if (variantStock?.length) {
+    if (variantStock.length !== sizes.length || new Set(variantStock.map(v => v.size)).size !== sizes.length || variantStock.some(v => !sizes.includes(v.size) || !Number.isSafeInteger(v.countInStock) || v.countInStock < 0) || variantStock.reduce((sum, v) => sum + v.countInStock, 0) !== countInStock) fail(400, 'Size stock must match selected sizes and total stock');
   }
-
-  const { name, brand, category, description, price, originalPrice, countInStock, sizes, tags, isFeatured, existingImages } = req.body;
-
-  // New uploaded images
-  const newImages = req.files ? req.files.map((f) => f.path) : [];
-  const keepImages = existingImages ? (typeof existingImages === 'string' ? JSON.parse(existingImages) : existingImages) : [];
-
-  const parsedSizes = typeof sizes === 'string' ? JSON.parse(sizes) : sizes || product.sizes;
-  const parsedTags = typeof tags === 'string' ? JSON.parse(tags) : tags || product.tags;
-
-  product.name = name || product.name;
-  product.brand = brand || product.brand;
-  product.category = category || product.category;
-  product.description = description || product.description;
-  product.price = price ? Number(price) : product.price;
-  product.originalPrice = originalPrice ? Number(originalPrice) : product.originalPrice;
-  product.countInStock = countInStock !== undefined ? Number(countInStock) : product.countInStock;
-  product.sizes = parsedSizes;
-  product.tags = parsedTags;
-  product.isFeatured = isFeatured !== undefined ? isFeatured === 'true' : product.isFeatured;
-  product.images = [...keepImages, ...newImages];
-
-  const updated = await product.save();
-  res.json({ success: true, product: updated });
+  return { name: text(body.name, 'name', 150), brand: text(body.brand, 'brand', 100), category: text(body.category, 'category', 30), description: text(body.description, 'description', 10000), price: Math.round(price * 100) / 100, originalPrice: Math.round(originalPrice * 100) / 100, countInStock, sizes, tags: parseArray(body.tags || [], 'tags').map(t => text(t, 'tag', 50)), isFeatured: body.isFeatured === 'true' || body.isFeatured === true, ...(variantStock !== undefined ? { variantStock } : {}) };
+}
+async function deleteAssets(assets) {
+  await Promise.all(assets.filter(a => a.publicId).map(a => cloudinary.uploader.destroy(a.publicId).catch(error => console.error(JSON.stringify({ event: 'media_cleanup_failed', publicId: a.publicId, message: error.message })))));
+}
+const saveProduct = isNew => asyncHandler(async (req, res) => {
+  const uploads = (req.files || []).map(f => ({ url: f.path, publicId: f.filename }));
+  let committed = false;
+  try {
+    const product = isNew ? new Product() : await Product.findById(objectId(req.params.id));
+    if (!product) fail(404, 'Product not found');
+    const keep = isNew ? [] : req.body.existingImages === undefined ? product.images : parseArray(req.body.existingImages, 'images');
+    if (keep.some(url => typeof url !== 'string' || !product.images.includes(url)) || new Set(keep).size !== keep.length) fail(400, 'Invalid existing images');
+    if (keep.length + uploads.length < 1 || keep.length + uploads.length > 5) fail(400, 'Use between 1 and 5 images');
+    const removed = (product.imageAssets || []).filter(a => !keep.includes(a.url));
+    Object.assign(product, productFields(req.body));
+    if (product.variantStock?.length && product.variantStock.reduce((sum, v) => sum + v.countInStock, 0) !== product.countInStock) fail(400, 'Update size stock to match total');
+    product.images = [...keep, ...uploads.map(a => a.url)];
+    product.imageAssets = [...(product.imageAssets || []).filter(a => keep.includes(a.url)), ...uploads];
+    await product.save(); committed = true;
+    await deleteAssets(removed);
+    res.status(isNew ? 201 : 200).json({ success: true, product });
+  } finally { if (!committed) await deleteAssets(uploads); }
 });
-
-// @desc    Delete product
-// @route   DELETE /api/admin/products/:id
-// @access  Admin
+const createProduct = saveProduct(true), updateProduct = saveProduct(false);
 const deleteProduct = asyncHandler(async (req, res) => {
-  const product = await Product.findById(req.params.id);
-  if (!product) {
-    res.status(404);
-    throw new Error('Product not found');
-  }
-
-  // Delete images from Cloudinary
-  for (const imageUrl of product.images) {
-    try {
-      const publicId = imageUrl.split('/').slice(-2).join('/').split('.')[0];
-      await cloudinary.uploader.destroy(publicId);
-    } catch (err) {
-      console.error('Cloudinary delete error:', err.message);
-    }
-  }
-
+  const product = await Product.findById(objectId(req.params.id));
+  if (!product) fail(404, 'Product not found');
   await product.deleteOne();
-  res.json({ success: true, message: 'Product deleted successfully' });
+  await deleteAssets(product.imageAssets || []);
+  res.json({ success: true, message: 'Product deleted' });
 });
-
-// ============ ORDERS ============
-
-// @desc    Get all orders
-// @route   GET /api/admin/orders
-// @access  Admin
 const getAllOrders = asyncHandler(async (req, res) => {
-  const { page = 1, limit = 20, status } = req.query;
-  // Exclude ghost 'Pending Payment' orders unless explicitly filtered
-  const filter = status ? { orderStatus: status } : { orderStatus: { $ne: 'Pending Payment' } };
-  const total = await Order.countDocuments(filter);
-  const orders = await Order.find(filter)
-    .sort({ createdAt: -1 })
-    .skip((page - 1) * limit)
-    .limit(Number(limit))
-    .populate('user', 'name email');
-
-  res.json({ success: true, orders, total, pages: Math.ceil(total / limit) });
+  const { page, limit, skip } = pagination(req.query, 20);
+  const filter = req.query.status ? { orderStatus: text(req.query.status, 'status', 30) } : confirmed;
+  if (req.query.refund === 'required') filter.refundStatus = 'required';
+  const [total, orders] = await Promise.all([Order.countDocuments(filter), Order.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit).populate('user', 'name email')]);
+  res.json({ success: true, orders, total, page, pages: Math.ceil(total / limit) });
 });
-
-// @desc    Update order status
-// @route   PUT /api/admin/orders/:id/status
-// @access  Admin
 const updateOrderStatus = asyncHandler(async (req, res) => {
-  const { orderStatus } = req.body;
-  const order = await Order.findById(req.params.id);
-
-  if (!order) {
-    res.status(404);
-    throw new Error('Order not found');
-  }
-
-  order.orderStatus = orderStatus;
-  if (orderStatus === 'Delivered') {
-    order.deliveredAt = new Date();
-  }
-  await order.save();
-
+  const id = objectId(req.params.id);
+  const order = await mongoose.connection.transaction(async session => {
+    const current = await Order.findById(id).session(session);
+    if (!current) fail(404, 'Order not found');
+    await transitionOrder(current, req.body.orderStatus, req.user._id, items => release(items, session));
+    await current.save({ session });
+    return current;
+  });
   res.json({ success: true, order });
 });
-
-// ============ USERS ============
-
-// @desc    Get all users
-// @route   GET /api/admin/users
-// @access  Admin
 const getAllUsers = asyncHandler(async (req, res) => {
-  const users = await User.find({}).sort({ createdAt: -1 });
-  res.json({ success: true, users });
+  const { page, limit, skip } = pagination(req.query, 20);
+  const filter = {};
+  if (req.query.keyword) {
+    const escaped = text(req.query.keyword, 'search', 100).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    filter.$or = [{ name: { $regex: escaped, $options: 'i' } }, { email: { $regex: escaped, $options: 'i' } }];
+  }
+  const [users, total] = await Promise.all([User.find(filter).select('name email phone isAdmin createdAt').sort({ createdAt: -1 }).skip(skip).limit(limit), User.countDocuments(filter)]);
+  res.json({ success: true, users, total, page, pages: Math.ceil(total / limit) });
 });
-
-module.exports = {
-  getDashboardStats,
-  adminGetProducts,
-  createProduct,
-  updateProduct,
-  deleteProduct,
-  getAllOrders,
-  updateOrderStatus,
-  getAllUsers,
-};
+module.exports = { getDashboardStats, adminGetProducts, createProduct, updateProduct, deleteProduct, getAllOrders, updateOrderStatus, getAllUsers, productFields };

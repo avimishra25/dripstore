@@ -1,0 +1,12 @@
+**/node_modules
+**/.env
+**/.env.*
+!**/.env.example
+**/*.log
+.git
+.agents
+.codex
+.aws
+client/build
+docs/screenshots
+server/tests

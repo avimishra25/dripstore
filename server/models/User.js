@@ -26,6 +26,7 @@ const userSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    tokenVersion: { type: Number, default: 0 },
     avatar: {
       type: String,
       default: '',

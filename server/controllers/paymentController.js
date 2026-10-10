@@ -1,130 +1,67 @@
 const asyncHandler = require('express-async-handler');
 const Razorpay = require('razorpay');
-const crypto = require('crypto');
 const Order = require('../models/Order');
-const Product = require('../models/Product');
-const Cart = require('../models/Cart');
-
-const razorpay = new Razorpay({
-  key_id: process.env.RAZORPAY_KEY_ID,
-  key_secret: process.env.RAZORPAY_KEY_SECRET,
-});
-
-// @desc    Create Razorpay order
-// @route   POST /api/payment/create-order
-// @access  Private
+const { fail, objectId } = require('../utils/validation');
+const { signatureMatches, confirmPayment } = require('../services/payments');
+const { state: demo } = require('../demo/runtime');
+let provider;
+const getProvider = () => provider || (provider = new Razorpay({ key_id: process.env.RAZORPAY_KEY_ID, key_secret: process.env.RAZORPAY_KEY_SECRET }));
+async function ownedOrder(id, user) {
+  const order = await Order.findById(objectId(id));
+  if (!order) fail(404, 'Order not found');
+  if (String(order.user) !== String(user._id)) fail(403, 'Not authorized');
+  return order;
+}
 const createRazorpayOrder = asyncHandler(async (req, res) => {
-  const { orderId } = req.body;
-
-  const order = await Order.findById(orderId);
-  if (!order) {
-    res.status(404);
-    throw new Error('Order not found');
+  const order = await ownedOrder(req.body.orderId, req.user);
+  if (order.isPaid || order.orderStatus !== 'Pending Payment') fail(409, 'Order cannot accept payment');
+  if (demo.enabled) return res.json({ demo: true });
+  let providerId = order.paymentResult?.razorpay_order_id;
+  if (!providerId) {
+    const paymentOrder = await getProvider().orders.create({ amount: Math.round(order.totalPrice * 100), currency: 'INR', receipt: `receipt_${order._id}` });
+    const stored = await Order.findOneAndUpdate({ _id: order._id, isPaid: false, orderStatus: 'Pending Payment', 'paymentResult.razorpay_order_id': { $exists: false } }, { $set: { paymentResult: { razorpay_order_id: paymentOrder.id, status: 'created' } } }, { new: true });
+    const current = stored || await Order.findById(order._id);
+    if (!current || current.isPaid || current.orderStatus !== 'Pending Payment') fail(409, 'Order cannot accept payment');
+    providerId = current.paymentResult?.razorpay_order_id;
+    if (!providerId) fail(409, 'Please retry payment');
   }
-
-  const options = {
-    amount: Math.round(order.totalPrice * 100), // paise
-    currency: 'INR',
-    receipt: `receipt_${order._id}`,
-    notes: {
-      orderId: order._id.toString(),
-      userId: req.user._id.toString(),
-    },
-  };
-
-  const razorpayOrder = await razorpay.orders.create(options);
-
-  order.paymentResult = {
-    ...order.paymentResult,
-    razorpay_order_id: razorpayOrder.id,
-    status: 'created',
-  };
-  await order.save();
-
-  res.json({
-    success: true,
-    razorpayOrderId: razorpayOrder.id,
-    amount: razorpayOrder.amount,
-    currency: razorpayOrder.currency,
-    key: process.env.RAZORPAY_KEY_ID,
-  });
+  res.json({ success: true, razorpayOrderId: providerId, amount: Math.round(order.totalPrice * 100), currency: 'INR', key: process.env.RAZORPAY_KEY_ID });
 });
-
-// @desc    Verify Razorpay payment — THIS is where the order is confirmed
-// @route   POST /api/payment/verify
-// @access  Private
 const verifyPayment = asyncHandler(async (req, res) => {
-  const { razorpay_order_id, razorpay_payment_id, razorpay_signature, orderId } = req.body;
-
-  // 1. Verify signature
-  const body = razorpay_order_id + '|' + razorpay_payment_id;
-  const expectedSignature = crypto
-    .createHmac('sha256', process.env.RAZORPAY_KEY_SECRET)
-    .update(body.toString())
-    .digest('hex');
-
-  if (expectedSignature !== razorpay_signature) {
-    res.status(400);
-    throw new Error('Payment verification failed: invalid signature');
+  const order = await ownedOrder(req.body.orderId, req.user);
+  const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body;
+  if (typeof razorpay_payment_id !== 'string' || !/^pay_[a-z\d]+$/i.test(razorpay_payment_id) || razorpay_order_id !== order.paymentResult?.razorpay_order_id) fail(400, 'Payment does not match this order');
+  if (!signatureMatches(`${order.paymentResult.razorpay_order_id}|${razorpay_payment_id}`, razorpay_signature, process.env.RAZORPAY_KEY_SECRET)) fail(400, 'Invalid payment signature');
+  res.json({ success: true, order: await confirmPayment(order._id, await getProvider().payments.fetch(razorpay_payment_id)) });
+});
+const reconcilePayment = asyncHandler(async (req, res) => {
+  const order = await ownedOrder(req.params.orderId, req.user);
+  if (demo.enabled || order.isPaid || !order.paymentResult?.razorpay_order_id) return res.json({ success: true, order });
+  const payments = await getProvider().orders.fetchPayments(order.paymentResult.razorpay_order_id);
+  const captured = payments.items.find(payment => payment.status === 'captured');
+  res.json({ success: true, order: captured ? await confirmPayment(order._id, captured) : order });
+});
+const paymentWebhook = asyncHandler(async (req, res) => {
+  if (!signatureMatches(req.body, req.get('x-razorpay-signature'), process.env.RAZORPAY_WEBHOOK_SECRET)) fail(400, 'Invalid webhook signature');
+  const event = JSON.parse(req.body.toString('utf8'));
+  if (event.event === 'payment.captured' || event.event === 'order.paid') {
+    const entity = event.payload?.payment?.entity;
+    if (!entity?.id || !entity?.order_id) fail(400, 'Missing payment');
+    const order = await Order.findOne({ 'paymentResult.razorpay_order_id': entity.order_id });
+    if (order) await confirmPayment(order._id, await getProvider().payments.fetch(entity.id));
   }
-
-  // 2. Find and confirm order
-  const order = await Order.findById(orderId);
-  if (!order) {
-    res.status(404);
-    throw new Error('Order not found');
-  }
-
-  // 3. Reduce stock NOW (only after confirmed payment)
-  for (const item of order.orderItems) {
-    const product = await Product.findById(item.product);
-    if (product) {
-      product.countInStock = Math.max(0, product.countInStock - item.quantity);
-      await product.save();
+  if (event.event === 'refund.processed') {
+    const refund = event.payload?.refund?.entity;
+    if (!refund?.payment_id) fail(400, 'Missing refund');
+    const payment = await getProvider().payments.fetch(refund.payment_id);
+    if ((payment.status === 'refunded' || payment.refund_status === 'full') && payment.amount_refunded === payment.amount) {
+      await Order.updateOne({ 'paymentResult.razorpay_payment_id': payment.id, refundStatus: 'required' }, { $set: { refundStatus: 'processed', refundedAt: new Date() } });
     }
   }
-
-  // 4. Mark order as paid and move to Processing
-  order.isPaid = true;
-  order.paidAt = new Date();
-  order.orderStatus = 'Processing';
-  order.paymentResult = {
-    razorpay_order_id,
-    razorpay_payment_id,
-    razorpay_signature,
-    status: 'paid',
-  };
-  await order.save();
-
-  // 5. Clear cart
-  await Cart.findOneAndDelete({ user: order.user });
-
-  res.json({ success: true, message: 'Payment verified successfully', order });
+  res.json({ success: true });
 });
-
-// @desc    Cancel a pending-payment order (called if user closes Razorpay modal)
-// @route   DELETE /api/payment/cancel/:orderId
-// @access  Private
 const cancelPendingOrder = asyncHandler(async (req, res) => {
-  const order = await Order.findById(req.params.orderId);
-
-  if (!order) {
-    res.status(404);
-    throw new Error('Order not found');
-  }
-
-  if (order.user.toString() !== req.user._id.toString()) {
-    res.status(403);
-    throw new Error('Not authorized');
-  }
-
-  // Only delete if still pending payment
-  if (order.orderStatus === 'Pending Payment') {
-    await order.deleteOne();
-    return res.json({ success: true, message: 'Pending order cancelled' });
-  }
-
-  res.json({ success: true, message: 'Order already processed' });
+  const order = await ownedOrder(req.params.orderId, req.user);
+  res.json({ success: true, order, message: 'Payment can be retried from your order history' });
 });
-
-module.exports = { createRazorpayOrder, verifyPayment, cancelPendingOrder };
+module.exports = { createRazorpayOrder, verifyPayment, reconcilePayment, paymentWebhook, cancelPendingOrder, getProvider };

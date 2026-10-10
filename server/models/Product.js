@@ -22,7 +22,9 @@ const productSchema = new mongoose.Schema(
     description: { type: String, required: [true, 'Description is required'] },
     price: { type: Number, required: [true, 'Price is required'], min: 0 },
     originalPrice: { type: Number, default: 0 }, // for showing discounts
-    countInStock: { type: Number, required: true, default: 0, min: 0 },
+    countInStock: { type: Number, required: true, default: 0, min: 0, validate: Number.isSafeInteger },
+    variantStock: [{ size: { type: String, required: true }, countInStock: { type: Number, required: true, min: 0, validate: Number.isSafeInteger } }],
+    imageAssets: [{ url: String, publicId: String }],
     images: [{ type: String }], // Cloudinary URLs
     sizes: [{ type: String }], // e.g. ['S','M','L','XL'] or ['7','8','9','10']
     tags: [{ type: String }],
@@ -31,7 +33,7 @@ const productSchema = new mongoose.Schema(
     numReviews: { type: Number, default: 0 },
     rating: { type: Number, default: 0 },
   },
-  { timestamps: true }
+  { timestamps: true, optimisticConcurrency: true }
 );
 
 // Auto-compute average rating on save
@@ -48,5 +50,7 @@ productSchema.methods.calculateRating = function () {
 
 // Text index for search
 productSchema.index({ name: 'text', brand: 'text', description: 'text', tags: 'text' });
+productSchema.index({ category: 1, createdAt: -1 });
+productSchema.index({ isFeatured: 1, createdAt: -1 });
 
 module.exports = mongoose.model('Product', productSchema);

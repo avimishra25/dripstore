@@ -2,126 +2,64 @@ const asyncHandler = require('express-async-handler');
 const Order = require('../models/Order');
 const Cart = require('../models/Cart');
 const Product = require('../models/Product');
-
-// @desc    Create new order (PENDING — not confirmed until payment)
-// @route   POST /api/orders
-// @access  Private
-const createOrder = asyncHandler(async (req, res) => {
-  const { orderItems, shippingAddress, paymentMethod } = req.body;
-
-  if (!orderItems || orderItems.length === 0) {
-    res.status(400);
-    throw new Error('No order items provided');
-  }
-
-  // Verify stock availability (do NOT reduce stock yet — wait for payment)
-  let itemsPrice = 0;
-  for (const item of orderItems) {
-    const product = await Product.findById(item.product);
-    if (!product) {
-      res.status(404);
-      throw new Error(`Product not found`);
-    }
-    if (product.countInStock < item.quantity) {
-      res.status(400);
-      throw new Error(`"${product.name}" doesn't have enough stock`);
-    }
-    itemsPrice += product.price * item.quantity;
-  }
-
-  const shippingPrice = itemsPrice > 999 ? 0 : 99;
-  const taxPrice = Math.round(itemsPrice * 0.18);
-  const totalPrice = itemsPrice + shippingPrice + taxPrice;
-
-  // Create order as PENDING — not confirmed until Razorpay payment succeeds
-  const order = await Order.create({
-    user: req.user._id,
-    orderItems,
-    shippingAddress,
-    paymentMethod: paymentMethod || 'Razorpay',
-    itemsPrice,
-    shippingPrice,
-    taxPrice,
-    totalPrice,
-    isPaid: false,
-    orderStatus: 'Pending Payment',
+const { fail, objectId, pagination, normalizeItems, shipping, quote, stockFor } = require('../utils/validation');
+const cartFields = 'name images price countInStock sizes brand variantStock';
+async function resolveItems(input, allowEmpty = false) {
+  const items = normalizeItems(input, allowEmpty);
+  const products = await Product.find({ _id: { $in: items.map(i => i.product) } });
+  const byId = new Map(products.map(p => [String(p._id), p]));
+  const totals = new Map();
+  return items.map(item => {
+    const product = byId.get(item.product);
+    if (!product) fail(409, 'A product is no longer available. Update your cart.');
+    if (!product.sizes.includes(item.size)) fail(400, 'Selected size is unavailable');
+    const total = (totals.get(item.product) || 0) + item.quantity;
+    totals.set(item.product, total);
+    if (stockFor(product, item.size) < item.quantity || product.countInStock < total) fail(409, `Not enough stock for ${product.name}`);
+    return { ...item, name: product.name, image: product.images[0] || '', price: product.price };
   });
-
+}
+const createOrder = asyncHandler(async (req, res) => {
+  const orderItems = await resolveItems(req.body.orderItems);
+  const order = await Order.create({ user: req.user._id, orderItems, shippingAddress: shipping(req.body.shippingAddress), ...quote(orderItems), paymentMethod: 'Razorpay', orderStatus: 'Pending Payment', statusHistory: [{ status: 'Pending Payment', actor: req.user._id }] });
   res.status(201).json({ success: true, order });
 });
-
-// @desc    Get logged-in user's orders — only CONFIRMED (paid) orders shown
-// @route   GET /api/orders/myorders
-// @access  Private
 const getMyOrders = asyncHandler(async (req, res) => {
-  const orders = await Order.find({
-    user: req.user._id,
-    orderStatus: { $ne: 'Pending Payment' },
-  })
-    .sort({ createdAt: -1 })
-    .populate('orderItems.product', 'name images');
-
-  res.json({ success: true, orders });
+  const { page, limit, skip } = pagination(req.query, 20);
+  const filter = { user: req.user._id };
+  const [orders, total] = await Promise.all([Order.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit), Order.countDocuments(filter)]);
+  res.json({ success: true, orders, page, pages: Math.ceil(total / limit), total });
 });
-
-// @desc    Get order by ID
-// @route   GET /api/orders/:id
-// @access  Private
 const getOrderById = asyncHandler(async (req, res) => {
-  const order = await Order.findById(req.params.id).populate('user', 'name email');
-
-  if (!order) {
-    res.status(404);
-    throw new Error('Order not found');
-  }
-
-  if (order.user._id.toString() !== req.user._id.toString() && !req.user.isAdmin) {
-    res.status(403);
-    throw new Error('Not authorized to view this order');
-  }
-
+  const order = await Order.findById(objectId(req.params.id)).populate('user', 'name email');
+  if (!order) fail(404, 'Order not found');
+  if (String(order.user?._id) !== String(req.user._id) && !req.user.isAdmin) fail(403, 'Not authorized');
   res.json({ success: true, order });
 });
-
-// @desc    Get user cart
-// @route   GET /api/orders/cart
-// @access  Private
 const getCart = asyncHandler(async (req, res) => {
-  const cart = await Cart.findOne({ user: req.user._id }).populate(
-    'items.product',
-    'name images price countInStock sizes brand'
-  );
-  res.json({ success: true, cart: cart || { items: [] } });
+  const cart = await Cart.findOne({ user: req.user._id }).populate('items.product', cartFields);
+  res.json({ success: true, cart: cart ? { items: cart.items.filter(i => i.product), revision: cart.revision || 0 } : { items: [], revision: 0 } });
 });
-
-// @desc    Sync/update cart
-// @route   PUT /api/orders/cart
-// @access  Private
 const updateCart = asyncHandler(async (req, res) => {
-  const { items } = req.body;
-
-  let cart = await Cart.findOne({ user: req.user._id });
-  if (cart) {
-    cart.items = items;
-    await cart.save();
-  } else {
-    cart = await Cart.create({ user: req.user._id, items });
+  const mergeId = req.body.mergeId;
+  if (mergeId !== undefined) {
+    if (typeof mergeId !== 'string' || !/^[a-z\d-]{36}$/i.test(mergeId)) fail(400, 'Invalid cart merge ID');
+    const previous = await Cart.findOne({ user: req.user._id, guestMergeIds: mergeId }).populate('items.product', cartFields);
+    if (previous) return res.json({ success: true, cart: previous });
   }
-
-  const populated = await Cart.findById(cart._id).populate(
-    'items.product',
-    'name images price countInStock sizes brand'
-  );
-
-  res.json({ success: true, cart: populated });
+  const items = await resolveItems(req.body.items, true);
+  const revision = req.body.revision;
+  if (!Number.isSafeInteger(revision) || revision < 0) fail(400, 'Cart revision is required');
+  const cart = await Cart.findOneAndUpdate({ user: req.user._id, ...(revision === 0 ? { $or: [{ revision: 0 }, { revision: { $exists: false } }] } : { revision }) }, { $set: { items }, $inc: { revision: 1 }, ...(mergeId ? { $push: { guestMergeIds: { $each: [mergeId], $slice: -100 } } } : {}) }, { new: true, upsert: revision === 0, runValidators: true });
+  if (!cart) fail(409, 'Cart changed in another tab. Refresh and retry.');
+  await cart.populate('items.product', cartFields);
+  res.json({ success: true, cart });
 });
-
-// @desc    Clear cart
-// @route   DELETE /api/orders/cart
-// @access  Private
 const clearCart = asyncHandler(async (req, res) => {
-  await Cart.findOneAndDelete({ user: req.user._id });
-  res.json({ success: true, message: 'Cart cleared' });
+  const revision = Number(req.query.revision);
+  if (!Number.isSafeInteger(revision) || revision < 0) fail(400, 'Cart revision is required');
+  const cart = await Cart.findOneAndUpdate({ user: req.user._id, revision }, { $set: { items: [] }, $inc: { revision: 1 } }, { new: true });
+  if (!cart) fail(409, 'Cart changed. Refresh and retry.');
+  res.json({ success: true, cart });
 });
-
-module.exports = { createOrder, getMyOrders, getOrderById, getCart, updateCart, clearCart };
+module.exports = { createOrder, getMyOrders, getOrderById, getCart, updateCart, clearCart, resolveItems };

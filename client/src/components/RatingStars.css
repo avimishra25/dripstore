@@ -18,3 +18,5 @@
 
 .review-count { font-size: 0.85rem; color: var(--text-secondary); }
 .review-count-small { font-size: 0.75rem; color: var(--text-muted); }
+
+button.star { background: transparent; border: 0; padding: 0.4rem; }

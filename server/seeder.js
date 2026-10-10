@@ -5,10 +5,13 @@
  */
 
 const mongoose = require('mongoose');
-const bcrypt = require('bcryptjs');
 const dotenv = require('dotenv');
 
 dotenv.config();
+const databaseName = (() => { try { return new URL(process.env.MONGO_URI).pathname.slice(1); } catch { return ''; } })();
+if (process.env.NODE_ENV !== 'development' || !process.argv.includes('--allow-delete') || !process.env.SEED_DATABASE_NAME || databaseName !== process.env.SEED_DATABASE_NAME || !/(?:_dev|_test)$/.test(databaseName)) {
+  throw new Error('Seeding requires NODE_ENV=development, --allow-delete, and SEED_DATABASE_NAME matching a database ending in _dev or _test');
+}
 
 // ── Models ──────────────────────────────────────────────────────────────────
 const User = require('./models/User');
@@ -337,7 +340,8 @@ const importData = async () => {
     console.log('🗑️  Cleared existing data');
 
     // Insert users (password hashing handled by pre-save hook)
-    const createdUsers = await User.insertMany(users);
+    const createdUsers = [];
+    for (const user of users) createdUsers.push(await User.create(user));
     const adminUser = createdUsers[0];
     console.log(`👤 Created ${createdUsers.length} users`);
     console.log(`   Admin: admin@dripstore.com / admin123`);

@@ -16,7 +16,7 @@
 
   --text-primary: #f0f0f0;
   --text-secondary: #999999;
-  --text-muted: #555555;
+  --text-muted: #949494;
 
   --accent: #ff3333;
   --accent-hover: #ff0000;
@@ -248,3 +248,7 @@ h1, h2, h3, h4, h5, h6 { font-weight: 600; line-height: 1.2; }
 .mb-2 { margin-bottom: 1rem; }
 .mb-3 { margin-bottom: 1.5rem; }
 .w-full { width: 100%; }
+
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+input[type="checkbox"], input[type="radio"] { width: auto; }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; } }

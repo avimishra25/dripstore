@@ -1,0 +1,46 @@
+const express = require('express');
+const cors = require('cors');
+const crypto = require('crypto');
+const mongoose = require('mongoose');
+const { errorHandler } = require('./middleware/errorMiddleware');
+const rateLimit = require('./middleware/rateLimit');
+const app = express();
+app.disable('x-powered-by');
+if (process.env.TRUST_PROXY_HOPS) app.set('trust proxy', Number(process.env.TRUST_PROXY_HOPS));
+app.use((req, res, next) => {
+  req.id = crypto.randomUUID();
+  res.set({ 'X-Request-ID': req.id, 'X-Content-Type-Options': 'nosniff', 'X-Frame-Options': 'DENY', 'Referrer-Policy': 'strict-origin-when-cross-origin', 'Cache-Control': 'no-store' });
+  const start = Date.now();
+  const requestPath = req.path;
+  res.on('finish', () => console.log(JSON.stringify({ event: 'request', requestId: req.id, method: req.method, path: requestPath, status: res.statusCode, durationMs: Date.now() - start })));
+  next();
+});
+const { state: demo } = require('./demo/runtime');
+app.use('/api', (req, res, next) => {
+  if (!demo.enabled) return next();
+  if (demo.resetting) return res.status(503).json({ message: 'Demo is resetting. Retry shortly.' });
+  demo.active++; res.once('close', () => demo.active--);
+  if (req.path === '/payment/webhook' || req.path === '/payment/verify') return res.status(409).json({ message: 'Real payments are disabled in demo mode' });
+  next();
+});
+// Hosted demo serves frontend and API on one origin; no cross-origin access needed.
+if (!(demo.enabled && process.env.DEMO_SERVE_CLIENT === 'true')) app.use(cors({ origin: process.env.CLIENT_URL || 'http://localhost:3000' }));
+app.get('/api/health', (req, res) => res.json({ status: 'alive' }));
+app.get('/api/ready', (req, res) => res.status(mongoose.connection.readyState === 1 ? 200 : 503).json({ ready: mongoose.connection.readyState === 1 }));
+app.post('/api/payment/webhook', express.raw({ type: 'application/json', limit: '256kb' }), require('./controllers/paymentController').paymentWebhook);
+app.use('/api', rateLimit(300));
+app.use(express.json({ limit: '100kb' }));
+app.use(express.urlencoded({ extended: false, limit: '100kb' }));
+app.use('/api/auth/login', rateLimit(10));
+app.use('/api/auth/register', rateLimit(5));
+app.use('/api/payment', rateLimit(30));
+app.use('/api/demo', require('./demo/routes'));
+app.use('/api/auth', require('./routes/authRoutes'));
+app.use('/api/products', require('./routes/productRoutes'));
+app.use('/api/orders', require('./routes/orderRoutes'));
+app.use('/api/payment', require('./routes/paymentRoutes'));
+app.use('/api/admin', require('./routes/adminRoutes'));
+if (demo.enabled && process.env.DEMO_SERVE_CLIENT === 'true') require('./demo/static')(app);
+app.use((req, res) => res.status(404).json({ success: false, message: 'Route not found' }));
+app.use(errorHandler);
+module.exports = app;

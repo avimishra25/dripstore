@@ -112,3 +112,7 @@
   font-weight: 500;
 }
 .size-chip.more { color: var(--accent); border-color: var(--accent-dim); }
+
+.product-card-image > a { display: block; width: 100%; height: 100%; }
+.product-card:focus-within .quick-add-btn { transform: translateY(0); }
+@media (hover: none) { .quick-add-btn { transform: translateY(0); } }

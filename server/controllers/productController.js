@@ -1,5 +1,6 @@
 const asyncHandler = require('express-async-handler');
 const Product = require('../models/Product');
+const { pagination, text, fail } = require('../utils/validation');
 
 // @desc    Get all products with filters, sorting, pagination
 // @route   GET /api/products
@@ -20,14 +21,16 @@ const getProducts = asyncHandler(async (req, res) => {
   const filter = {};
 
   if (keyword) {
-    filter.$text = { $search: keyword };
+    filter.$text = { $search: text(keyword, 'search', 100) };
   }
 
   if (category && category !== 'all') {
-    filter.category = category;
+    filter.category = text(category, 'category', 30);
   }
 
   if (minPrice || maxPrice) {
+    if ([minPrice, maxPrice].filter(v => v !== undefined && v !== '').some(v => typeof v !== 'string' || !Number.isFinite(Number(v)) || Number(v) < 0)) fail(400, 'Invalid price range');
+    if (minPrice && maxPrice && Number(minPrice) > Number(maxPrice)) fail(400, 'Invalid price range');
     filter.price = {};
     if (minPrice) filter.price.$gte = Number(minPrice);
     if (maxPrice) filter.price.$lte = Number(maxPrice);
@@ -44,12 +47,12 @@ const getProducts = asyncHandler(async (req, res) => {
   else if (sort === 'rating') sortOption = { rating: -1 };
   else if (sort === 'latest') sortOption = { createdAt: -1 };
 
-  const pageNum = Number(page);
-  const limitNum = Number(limit);
+  const { page: pageNum, limit: limitNum } = pagination({ page, limit });
   const skip = (pageNum - 1) * limitNum;
 
   const total = await Product.countDocuments(filter);
   const products = await Product.find(filter)
+    .select('-reviews -imageAssets')
     .sort(sortOption)
     .skip(skip)
     .limit(limitNum);
@@ -85,6 +88,8 @@ const getProductById = asyncHandler(async (req, res) => {
 // @access  Private
 const addReview = asyncHandler(async (req, res) => {
   const { rating, comment } = req.body;
+  if (!Number.isInteger(Number(rating)) || Number(rating) < 1 || Number(rating) > 5) fail(400, 'Rating must be between 1 and 5');
+  text(comment, 'review', 2000);
 
   if (!rating || !comment) {
     res.status(400);

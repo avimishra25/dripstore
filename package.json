@@ -7,9 +7,17 @@
     "client": "cd client && npm start",
     "dev": "concurrently \"npm run server\" \"npm run client\"",
     "install-all": "npm install && cd server && npm install && cd ../client && npm install",
-    "build": "cd client && npm run build"
+    "build": "cd client && npm run build",
+    "test": "npm test --prefix server && npm test --prefix client",
+    "lint": "npm run lint --prefix client",
+    "demo": "concurrently -k \"npm run demo --prefix server\" \"npm start --prefix client -- --mode demo --strictPort\"",
+    "build:demo": "npm run build --prefix client -- --mode demo",
+    "start:demo": "node server/demo.js --hosted"
   },
   "devDependencies": {
     "concurrently": "^8.2.2"
+  },
+  "engines": {
+    "node": ">=22.12.0"
   }
 }

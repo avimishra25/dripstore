@@ -8,3 +8,8 @@ server/node_modules/
 Thumbs.db
 *.log
 npm-debug.log*
+
+# Local review and verification reports
+/PROJECT_REVIEW.md
+/DEPLOYMENT_CHECK.md
+/DEPLOYMENT.md

@@ -1,0 +1,33 @@
+import { it, expect, vi, afterEach } from 'vitest';
+import { payOrder } from './payment';
+import api from './api';
+vi.mock('./api', () => ({ default: { post: vi.fn() } }));
+afterEach(() => { delete window.Razorpay; });
+const order = { _id: 'store_order', shippingAddress: { phone: '1234567890' } };
+it('dismissal preserves the order and a second attempt can verify payment', async () => {
+  let options;
+  window.Razorpay = class { constructor(value) { options = value; } on() {} open() {} };
+  api.post.mockResolvedValue({ data: { key: 'test', amount: 100, currency: 'INR', razorpayOrderId: 'order_A' } });
+  const first = payOrder(order, { name: 'Test' });
+  await vi.waitFor(() => expect(options).toBeDefined());
+  options.modal.ondismiss();
+  expect(await first).toBeNull();
+  options = undefined;
+  const retry = payOrder(order, { name: 'Test' });
+  await vi.waitFor(() => expect(options).toBeDefined());
+  api.post.mockResolvedValueOnce({ data: { order: { ...order, isPaid: true } } });
+  await options.handler({ razorpay_payment_id: 'pay_A' });
+  expect((await retry).isPaid).toBe(true);
+  expect(api.post.mock.calls.every(([url]) => !url.includes('cancel'))).toBe(true);
+});
+it('verification failure rejects so checkout can reset its loading state', async () => {
+  let options;
+  window.Razorpay = class { constructor(value) { options = value; } on() {} open() {} };
+  api.post.mockResolvedValue({ data: { key: 'test' } });
+  const pending = payOrder(order, {});
+  const failed = expect(pending).rejects.toThrow('confirmation pending');
+  await vi.waitFor(() => expect(options).toBeDefined());
+  api.post.mockRejectedValueOnce(new Error('offline'));
+  await options.handler({});
+  await failed;
+});

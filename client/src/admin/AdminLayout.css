@@ -79,6 +79,9 @@
 }
 
 @media (max-width: 768px) {
-  .admin-sidebar { display: none; }
+  .admin-layout { flex-direction: column; padding-top: 0; }
+  .admin-sidebar { display: flex; position: static; width: 100%; border-right: 0; }
+  .admin-nav { flex-direction: row; flex-wrap: wrap; }
+  .admin-logo, .admin-logout { display: none; }
   .admin-main { margin-left: 0; padding: 1.5rem 1rem; }
 }
