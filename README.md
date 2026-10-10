@@ -8,7 +8,13 @@
 ![Razorpay](https://img.shields.io/badge/Razorpay-02042B?style=for-the-badge&logo=razorpay&logoColor=3395FF)
 ![Cloudinary](https://img.shields.io/badge/Cloudinary-3448C5?style=for-the-badge&logo=cloudinary&logoColor=white)
 
-React storefront and Express/MongoDB API for sneakers and streetwear. Includes guest carts, customer accounts, catalog filters, Razorpay checkout, payment recovery, and product/order administration.
+React storefront and Express/MongoDB API for sneakers and streetwear. Includes guest carts, customer accounts, catalog filters, simulated demo checkout, payment recovery, and product/order administration.
+
+## Live demo
+
+[Open DripStore](https://dripstore-demo.onrender.com)
+
+The live site is a disposable portfolio demo hosted as one Docker web service on Render. It serves the compiled React frontend and Express API from the same HTTPS origin. Use **Try customer** or **Try admin** to explore it without credentials. No real money is charged and no orders are delivered.
 
 ## Portfolio demo (no credentials)
 
@@ -27,7 +33,11 @@ Open http://localhost:3000. Keep ports 3000 and 5000 free. The first launch may 
 
 This is one shared local playground, not a separate workspace per visitor. No real money is charged and no orders are delivered. The dedicated launcher creates its own disposable MongoDB replica set, ignores server .env/MONGO_URI, and generates a fresh session secret. The frontend demo command fixes its API target to that local server. Razorpay SDK, payment verification, and webhooks are disabled in demo mode; Cloudinary is not used.
 
-Ctrl+C stops the demo. Restarting starts fresh. Demo shortcuts and reset/payment endpoints are unavailable when using the normal server command. A Docker/Render hosting configuration is prepared. See [Render deployment](RENDER_DEPLOYMENT.md); no public deployment has been completed.
+Ctrl+C stops the demo. Restarting starts fresh. Demo shortcuts and reset/payment endpoints are unavailable when using the normal server command. See [Render deployment](RENDER_DEPLOYMENT.md) for the hosting configuration.
+
+## How the hosted demo works
+
+Render reads [`render.yaml`](render.yaml) and builds [`Dockerfile`](Dockerfile). The Docker build compiles the React app, installs the Express server, and bundles the frontend build into the server image. Express serves both the website routes and `/api` routes, so this demo does not need a separate Vercel frontend. The hosted demo starts an in-memory MongoDB replica set; data, uploads, and sessions reset when the service restarts.
 
 ## Requirements (normal development)
 
@@ -119,13 +129,13 @@ Set `NODE_ENV=production`, a strong JWT secret, exact HTTPS `CLIENT_URL`, creden
 - Structured request/error logs include a request ID.
 - SIGTERM/SIGINT drain the API and disconnect MongoDB.
 
-For the disposable portfolio demo, use the [Render deployment guide](RENDER_DEPLOYMENT.md).
+For the disposable portfolio demo, use the [Render deployment guide](RENDER_DEPLOYMENT.md). The current deployment is live at [dripstore-demo.onrender.com](https://dripstore-demo.onrender.com).
 
 Support email and approved policy links are optional public client settings. Supply genuine business details before launch. The application omits unconfigured legal links and unsupported storefront claims.
 
 ## Current limits
 
-Docker/Render hosting files are prepared. Mobile checkout, admin editing/upload/re-editing, and order fulfillment were browser-checked on 2026-10-11. The production-style local server passes routing/assets/readiness checks; Linux container validation, Render deployment, and public HTTPS checks are pending. Real Razorpay and Cloudinary are outside the portfolio demo checks. Wishlist, coupons, password recovery/email verification, transactional email, carrier tracking, and post-shipment returns are not included in this repair release.
+The live Render demo passed HTTPS, readiness, direct SPA routes, product/photo loading, customer demo entry, cart, checkout, simulated payment, and admin dashboard checks on 2026-10-11. Local verification passed 27 backend tests, 18 frontend tests, lint, build, and deployment smoke checks. Real Razorpay and Cloudinary are outside the portfolio demo checks. Wishlist, coupons, password recovery/email verification, transactional email, carrier tracking, and post-shipment returns are not included in this repair release.
 
 ## Demo photo credits
 
@@ -133,7 +143,7 @@ Demo product photos are bundled locally under `client/public/demo/products`. See
 
 ## Demo screenshots
 
-Captured during the 390 × 844 mobile check. Live URL: not deployed yet.
+Captured during the 390 × 844 mobile check. The live demo is available at [dripstore-demo.onrender.com](https://dripstore-demo.onrender.com).
 
 | Catalog | Payment simulator | Admin dashboard |
 | --- | --- | --- |
