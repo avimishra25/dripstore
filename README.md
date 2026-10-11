@@ -151,7 +151,7 @@ Captured during the 390 × 844 mobile check. The live demo is available at [drip
 
 ## Desktop screenshots
 
-<img width="1782" height="877" alt="image" src="https://github.com/user-attachments/assets/a96c08e8-c877-41fb-8b5b-ad5dc4bed4d5" />
+<img width="1658" height="915" alt="image" src="https://github.com/user-attachments/assets/bb916803-79c3-4c25-8696-017312a7ee0b" />
 <img width="1707" height="921" alt="image" src="https://github.com/user-attachments/assets/1bfccf26-9eb8-4350-8207-657055442678" />
 <img width="1696" height="922" alt="image" src="https://github.com/user-attachments/assets/e53b7917-7f33-479e-8ddd-5d00518b54a5" />
 <img width="1675" height="926" alt="image" src="https://github.com/user-attachments/assets/8eec60fb-a188-45cb-be1f-d209631b24fe" />
