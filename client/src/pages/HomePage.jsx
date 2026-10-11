@@ -65,28 +65,23 @@ const HomePage = () => {
           </div>
         </div>
         <div className="hero-visual">
-          <div className="hero-card-stack">
-            <div className="hero-card card-1">
-              <div className="hero-card-inner">
-                <span className="hero-card-emoji">👟</span>
-                <div>
-                  <div className="hero-card-brand">Nike</div>
-                  <div className="hero-card-name">Air Max 97</div>
-                  <div className="hero-card-price">₹12,999</div>
-                </div>
-              </div>
-            </div>
-            <div className="hero-card card-2">
-              <div className="hero-card-inner">
-                <span className="hero-card-emoji">🔥</span>
-                <div>
-                  <div className="hero-card-brand">Jordan</div>
-                  <div className="hero-card-name">Retro 1 High</div>
-                  <div className="hero-card-price">₹18,500</div>
-                </div>
-              </div>
-            </div>
-            <div className="hero-badge">JUST DROPPED</div>
+          <div className="hero-sneaker-stage">
+            <div className="hero-sneaker-glow" aria-hidden="true" />
+            <img
+              className="hero-sneaker"
+              src="/images/hero-sneaker.png"
+              alt="Red, ivory and black high-top sneaker floating at an angle"
+              width="1536"
+              height="1024"
+              fetchPriority="high"
+            />
+            <Link to="/products?category=sneakers" className="hero-product-label">
+              <span>
+                <span className="hero-product-kicker">THE SNEAKER EDIT</span>
+                <span className="hero-product-title">Stand out. Step up.</span>
+              </span>
+              <span className="hero-product-arrow" aria-hidden="true">↗</span>
+            </Link>
           </div>
         </div>
       </section>
